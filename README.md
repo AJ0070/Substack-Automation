@@ -39,6 +39,7 @@ Required:
 Recommended:
 
 - `SUBSTACK_PUBLICATION_URL`: your publication URL, for example `https://yourname.substack.com`.
+- `SUBSTACK_AUTH_STATE_PATH`: optional Playwright login state file, for example `substack-auth-state.json`.
 - `HEADLESS`: `true` for CI, `false` for local debugging.
 - `ARTICLE_DIR`: defaults to `articles`.
 - `LOG_DIR`: defaults to `logs`.
@@ -87,6 +88,24 @@ HEADLESS=false
 ```
 
 Substack may require email-code or two-factor verification. If that happens, run once locally with `HEADLESS=false`, complete the login manually, or adjust the account security settings for automation. The script logs clear failures and saves screenshots under `logs/`.
+
+GitHub-hosted runners may be blocked by Substack's Cloudflare security verification before the login form appears. Do not try to bypass that protection. For reliable scheduled publishing, use one of these options:
+
+- Run locally with cron/systemd/Task Scheduler.
+- Use a GitHub self-hosted runner on a machine where Substack login works.
+- Save Playwright auth state on that trusted machine:
+
+```bash
+HEADLESS=false SUBSTACK_AUTH_STATE_PATH=substack-auth-state.json python main.py --login-only
+```
+
+Then future runs on the same trusted machine can reuse:
+
+```env
+SUBSTACK_AUTH_STATE_PATH=substack-auth-state.json
+```
+
+Do not commit `substack-auth-state.json`; it contains active browser session cookies.
 
 Upload an existing markdown file:
 

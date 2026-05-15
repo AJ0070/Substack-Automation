@@ -38,6 +38,7 @@ jobs:
           SUBSTACK_EMAIL: ${{ secrets.SUBSTACK_EMAIL }}
           SUBSTACK_PASSWORD: ${{ secrets.SUBSTACK_PASSWORD }}
           SUBSTACK_PUBLICATION_URL: ${{ secrets.SUBSTACK_PUBLICATION_URL }}
+          SUBSTACK_AUTH_STATE_PATH: ${{ vars.SUBSTACK_AUTH_STATE_PATH || 'substack-auth-state.json' }}
           PUBLISH_MODE: ${{ vars.PUBLISH_MODE || 'draft' }}
           HEADLESS: "true"
           MAX_RETRIES: "6"

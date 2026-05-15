@@ -22,6 +22,10 @@ from app.utils import extract_title, retry_async
 logger = logging.getLogger(__name__)
 
 
+class CloudflareChallengeError(RuntimeError):
+    """Raised when Substack returns a Cloudflare verification page."""
+
+
 class SubstackPublisher:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
@@ -30,16 +34,14 @@ class SubstackPublisher:
         async with async_playwright() as playwright:
             browser = await playwright.chromium.launch(headless=self.settings.headless)
             try:
-                context = await browser.new_context(
-                    viewport={"width": 1440, "height": 1100},
-                    ignore_https_errors=False,
-                )
+                context = await self._new_context(browser)
                 context.set_default_timeout(self.settings.playwright_timeout_ms)
                 await self._grant_clipboard_permissions(context)
                 page = await context.new_page()
 
                 try:
                     await self._login(page)
+                    await self._save_auth_state(context)
                     await self._create_post(page, markdown)
                     if self.settings.should_publish:
                         await self._publish(page)
@@ -54,6 +56,47 @@ class SubstackPublisher:
             finally:
                 await browser.close()
 
+    async def login_only(self) -> None:
+        if self.settings.substack_auth_state_path is None:
+            raise RuntimeError("Set SUBSTACK_AUTH_STATE_PATH before running --login-only")
+
+        async with async_playwright() as playwright:
+            browser = await playwright.chromium.launch(headless=self.settings.headless)
+            try:
+                context = await self._new_context(browser)
+                context.set_default_timeout(self.settings.playwright_timeout_ms)
+                await self._grant_clipboard_permissions(context)
+                page = await context.new_page()
+                try:
+                    await self._login(page)
+                    await self._save_auth_state(context)
+                    logger.info(
+                        "Saved Substack auth state to %s",
+                        self.settings.substack_auth_state_path,
+                    )
+                finally:
+                    await context.close()
+            finally:
+                await browser.close()
+
+    async def _new_context(self, browser):
+        kwargs = {
+            "viewport": {"width": 1440, "height": 1100},
+            "ignore_https_errors": False,
+        }
+        auth_state_path = self.settings.substack_auth_state_path
+        if auth_state_path and auth_state_path.exists():
+            logger.info("Loading Substack auth state from %s", auth_state_path)
+            kwargs["storage_state"] = str(auth_state_path)
+        return await browser.new_context(**kwargs)
+
+    async def _save_auth_state(self, context: BrowserContext) -> None:
+        auth_state_path = self.settings.substack_auth_state_path
+        if auth_state_path is None:
+            return
+        auth_state_path.parent.mkdir(parents=True, exist_ok=True)
+        await context.storage_state(path=auth_state_path)
+
     async def _grant_clipboard_permissions(self, context: BrowserContext) -> None:
         origins = {
             "https://substack.com",
@@ -67,7 +110,6 @@ class SubstackPublisher:
             except PlaywrightError:
                 logger.debug("Could not grant clipboard permissions for %s", origin)
 
-    @retry_async(attempts=3, initial_delay=2.0)
     async def _login(self, page: Page) -> None:
         if await self._already_logged_in(page):
             logger.info("Already logged in to Substack")
@@ -76,6 +118,7 @@ class SubstackPublisher:
         logger.info("Opening Substack login")
         await page.goto("https://substack.com/sign-in", wait_until="domcontentloaded")
         await page.wait_for_timeout(2_000)
+        await self._raise_if_cloudflare_challenge(page)
 
         await self._try_click_by_text(
             page,
@@ -122,6 +165,7 @@ class SubstackPublisher:
             await self._click_by_text(page, ["Continue", "Sign in", "Log in"])
 
         await page.wait_for_load_state("domcontentloaded")
+        await self._raise_if_cloudflare_challenge(page)
         if not await self._already_logged_in(page):
             raise RuntimeError(
                 "Substack login did not complete. Check credentials or two-factor/email-code requirements."
@@ -359,6 +403,22 @@ class SubstackPublisher:
             body_text = ""
         preview = " ".join(body_text.split())[:500]
         logger.error("%s. url=%s title=%r body_preview=%r", message, page.url, await page.title(), preview)
+
+    async def _raise_if_cloudflare_challenge(self, page: Page) -> None:
+        title = await page.title()
+        try:
+            body_text = await page.locator("body").inner_text(timeout=2_000)
+        except PlaywrightError:
+            body_text = ""
+        normalized = " ".join(body_text.split()).lower()
+        if "just a moment" in title.lower() or (
+            "cloudflare" in normalized and "security verification" in normalized
+        ):
+            raise CloudflareChallengeError(
+                "Substack is showing Cloudflare security verification. "
+                "GitHub-hosted runners are blocked before login; use a self-hosted runner "
+                "or run locally with saved Playwright auth state."
+            )
 
     async def _click_by_text(self, page: Page, labels: list[str]) -> None:
         clicked = await self._try_click_by_text(page, labels, required=True)

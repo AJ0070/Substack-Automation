@@ -25,6 +25,7 @@ class Settings:
     headless: bool
     article_dir: Path
     log_dir: Path
+    substack_auth_state_path: Path | None = None
     gemini_model: str = "gemini-2.5-flash"
     max_retries: int = 6
     gemini_retry_initial_delay_seconds: float = 10.0
@@ -65,6 +66,7 @@ def load_settings(env_file: str | Path = ".env") -> Settings:
     log_dir = Path(os.getenv("LOG_DIR", "logs"))
     article_dir.mkdir(parents=True, exist_ok=True)
     log_dir.mkdir(parents=True, exist_ok=True)
+    auth_state = os.getenv("SUBSTACK_AUTH_STATE_PATH", "").strip()
 
     return Settings(
         gemini_api_key=_required("GEMINI_API_KEY"),
@@ -77,6 +79,7 @@ def load_settings(env_file: str | Path = ".env") -> Settings:
         headless=_bool_env("HEADLESS", True),
         article_dir=article_dir,
         log_dir=log_dir,
+        substack_auth_state_path=Path(auth_state) if auth_state else None,
         max_retries=int(os.getenv("MAX_RETRIES", "6")),
         gemini_retry_initial_delay_seconds=float(
             os.getenv("GEMINI_RETRY_INITIAL_DELAY_SECONDS", "10")

@@ -2,6 +2,8 @@
 .venv/
 __pycache__/
 *.py[cod]
+substack-auth-state.json
+*.auth-state.json
 
 logs/*
 !logs/.gitkeep

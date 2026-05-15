@@ -22,6 +22,11 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         help="Upload an existing markdown file instead of generating a new article.",
     )
+    parser.add_argument(
+        "--login-only",
+        action="store_true",
+        help="Open Substack login and save Playwright auth state, then exit.",
+    )
     return parser.parse_args()
 
 
@@ -35,6 +40,11 @@ async def run() -> None:
 
     settings = load_settings()
     configure_logging(settings.log_dir)
+    publisher = SubstackPublisher(settings)
+
+    if args.login_only:
+        await publisher.login_only()
+        return
 
     if args.markdown_file:
         article_path = args.markdown_file
@@ -50,7 +60,7 @@ async def run() -> None:
         logger.info("Skipping Substack upload because --skip-publish was provided")
         return
 
-    await SubstackPublisher(settings).publish_markdown(markdown, article_path)
+    await publisher.publish_markdown(markdown, article_path)
 
 
 if __name__ == "__main__":
