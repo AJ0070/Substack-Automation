@@ -6,7 +6,7 @@ on:
       markdown_file:
         description: "Optional markdown file to upload instead of generating with Gemini"
         required: false
-        default: ""
+        default: "articles/samples/getting-started-with-git.md"
   schedule:
     - cron: "0 8 * * 1"
 
