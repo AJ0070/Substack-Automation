@@ -1,0 +1,2 @@
+"""Substack automation package."""
+
