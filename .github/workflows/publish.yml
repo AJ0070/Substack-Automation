@@ -2,6 +2,11 @@ name: Generate and Publish Substack Post
 
 on:
   workflow_dispatch:
+    inputs:
+      markdown_file:
+        description: "Optional markdown file to upload instead of generating with Gemini"
+        required: false
+        default: ""
   schedule:
     - cron: "0 8 * * 1"
 
@@ -39,7 +44,12 @@ jobs:
           GEMINI_RETRY_INITIAL_DELAY_SECONDS: "10"
           GEMINI_RETRY_MAX_DELAY_SECONDS: "90"
           GENERATION_MODE: "compact"
-        run: python main.py
+        run: |
+          if [ -n "${{ github.event.inputs.markdown_file }}" ]; then
+            python main.py --markdown-file "${{ github.event.inputs.markdown_file }}"
+          else
+            python main.py
+          fi
 
       - name: Upload logs and generated articles
         if: always()

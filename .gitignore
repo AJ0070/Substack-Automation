@@ -8,6 +8,8 @@ logs/*
 
 articles/*
 !articles/.gitkeep
+!articles/samples/
+!articles/samples/*.md
 
 *.png
 *.html

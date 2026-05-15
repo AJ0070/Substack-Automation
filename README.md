@@ -94,6 +94,14 @@ Upload an existing markdown file:
 python main.py --markdown-file articles/example.md
 ```
 
+To test only the Substack upload path in GitHub Actions, run the workflow manually and set:
+
+```text
+markdown_file=articles/samples/getting-started-with-git.md
+```
+
+That skips Gemini generation and uploads the committed sample article.
+
 ## GitHub Actions Setup
 
 Create repository secrets:
