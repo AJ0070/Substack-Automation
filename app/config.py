@@ -29,6 +29,7 @@ class Settings:
     max_retries: int = 6
     gemini_retry_initial_delay_seconds: float = 10.0
     gemini_retry_max_delay_seconds: float = 90.0
+    generation_mode: str = "compact"
     playwright_timeout_ms: int = 45_000
 
     @property
@@ -83,5 +84,6 @@ def load_settings(env_file: str | Path = ".env") -> Settings:
         gemini_retry_max_delay_seconds=float(
             os.getenv("GEMINI_RETRY_MAX_DELAY_SECONDS", "90")
         ),
+        generation_mode=os.getenv("GENERATION_MODE", "compact").strip().lower(),
         playwright_timeout_ms=int(os.getenv("PLAYWRIGHT_TIMEOUT_MS", "45000")),
     )

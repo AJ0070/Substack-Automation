@@ -38,6 +38,7 @@ jobs:
           MAX_RETRIES: "6"
           GEMINI_RETRY_INITIAL_DELAY_SECONDS: "10"
           GEMINI_RETRY_MAX_DELAY_SECONDS: "90"
+          GENERATION_MODE: "compact"
         run: python main.py
 
       - name: Upload logs and generated articles

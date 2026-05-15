@@ -71,6 +71,31 @@ Do not include the article title unless this section is the introduction.
 """
 
 
+def article_prompt(topic_json: str, outline: str) -> str:
+    return f"""
+Write the complete markdown article from this topic metadata and outline.
+
+Topic metadata:
+{topic_json}
+
+Outline:
+{outline}
+
+{VOICE_RULES}
+
+Requirements:
+- 900 to 1400 words
+- SEO-friendly H1 title
+- beginner explanations
+- practical examples
+- at least one analogy
+- concise closing takeaway
+- no robotic AI tone
+
+Return only the complete markdown article.
+"""
+
+
 def polish_prompt(draft: str) -> str:
     return f"""
 Polish this markdown article for Substack publication.
@@ -88,4 +113,3 @@ Return only the final markdown article.
 Draft:
 {draft}
 """
-

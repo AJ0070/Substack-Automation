@@ -37,6 +37,22 @@ class BlogGenerator:
         logger.info("Generating article outline")
         outline = self._generate_text(prompts.outline_prompt(topic_metadata))
 
+        if self.settings.generation_mode == "sectioned":
+            rough_draft = self._generate_sectioned_article(topic_metadata, outline)
+        else:
+            logger.info("Generating complete article in compact mode")
+            rough_draft = self._generate_text(prompts.article_prompt(topic_metadata, outline))
+
+        logger.info("Polishing final article")
+        final_markdown = self._generate_text(prompts.polish_prompt(rough_draft))
+
+        return GeneratedArticle(
+            topic_metadata=topic_metadata,
+            outline=outline,
+            markdown=final_markdown,
+        )
+
+    def _generate_sectioned_article(self, topic_metadata: str, outline: str) -> str:
         headings = self._extract_headings(outline)
         if not headings:
             raise ValueError("Could not extract section headings from Gemini outline")
@@ -48,16 +64,7 @@ class BlogGenerator:
                 self._generate_text(prompts.section_prompt(topic_metadata, outline, heading))
             )
 
-        rough_draft = self._merge_article(outline, sections)
-
-        logger.info("Polishing final article")
-        final_markdown = self._generate_text(prompts.polish_prompt(rough_draft))
-
-        return GeneratedArticle(
-            topic_metadata=topic_metadata,
-            outline=outline,
-            markdown=final_markdown,
-        )
+        return self._merge_article(outline, sections)
 
     def _generate_text(self, prompt: str) -> str:
         delay = self.settings.gemini_retry_initial_delay_seconds

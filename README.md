@@ -45,6 +45,7 @@ Recommended:
 - `MAX_RETRIES`: Gemini generation retry attempts, defaults to `6`.
 - `GEMINI_RETRY_INITIAL_DELAY_SECONDS`: first Gemini retry delay, defaults to `10`.
 - `GEMINI_RETRY_MAX_DELAY_SECONDS`: maximum Gemini retry delay, defaults to `90`.
+- `GENERATION_MODE`: `compact` or `sectioned`, defaults to `compact`.
 - `PLAYWRIGHT_TIMEOUT_MS`: defaults to `45000`.
 
 ## Gemini API Setup
@@ -59,6 +60,8 @@ Run generation only:
 ```bash
 python main.py --skip-publish
 ```
+
+The default `GENERATION_MODE=compact` keeps each article to roughly four Gemini requests: topic, outline, full draft, and polish. Use `GENERATION_MODE=sectioned` only if you have enough quota for one request per article section.
 
 ## Substack Setup
 
@@ -146,6 +149,10 @@ Retry later or lower the generation complexity in `app/prompts.py`.
 `503 UNAVAILABLE` from Gemini
 
 The Gemini model is temporarily overloaded. The workflow now retries with longer exponential backoff. Rerun the job if all retry attempts are exhausted.
+
+`429 RESOURCE_EXHAUSTED` from Gemini
+
+You hit the free-tier quota. Keep `GENERATION_MODE=compact`, wait for quota reset, or use a Google AI plan with higher limits.
 
 `playwright install` errors in CI
 
