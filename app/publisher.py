@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
 from playwright.async_api import (
-    Browser,
     BrowserContext,
     Error as PlaywrightError,
+    Locator,
     Page,
     TimeoutError as PlaywrightTimeoutError,
     async_playwright,
@@ -68,12 +69,12 @@ class SubstackPublisher:
 
     @retry_async(attempts=3, initial_delay=2.0)
     async def _login(self, page: Page) -> None:
-        logger.info("Opening Substack login")
-        await page.goto("https://substack.com/sign-in", wait_until="domcontentloaded")
-
         if await self._already_logged_in(page):
             logger.info("Already logged in to Substack")
             return
+
+        logger.info("Opening Substack login")
+        await page.goto("https://substack.com/sign-in", wait_until="domcontentloaded")
 
         await self._fill_first_available(
             page,
@@ -94,12 +95,13 @@ class SubstackPublisher:
                 'input[autocomplete="current-password"]',
             ],
             self.settings.substack_password,
+            timeout_ms=10_000,
         )
         if password_filled:
             await self._click_by_text(page, ["Continue", "Sign in", "Log in"])
 
         await page.wait_for_load_state("domcontentloaded")
-        if await page.locator('input[type="password"]').count():
+        if not await self._already_logged_in(page):
             raise RuntimeError(
                 "Substack login did not complete. Check credentials or two-factor/email-code requirements."
             )
@@ -107,22 +109,78 @@ class SubstackPublisher:
     async def _already_logged_in(self, page: Page) -> bool:
         try:
             await page.goto("https://substack.com/home", wait_until="domcontentloaded")
-            return "sign-in" not in page.url and "login" not in page.url
+            if "sign-in" in page.url or "login" in page.url:
+                return False
+            if await page.locator('input[type="email"], input[type="password"]').count():
+                return False
+            return await self._is_visible_text(page, ["Create"], timeout_ms=5_000)
         except PlaywrightError:
             return False
 
+    async def _is_visible_text(
+        self, page: Page, labels: list[str], timeout_ms: int = 3_000
+    ) -> bool:
+        for label in labels:
+            name = re.compile(rf"^\s*{re.escape(label)}\s*$", re.IGNORECASE)
+            candidates = [
+                page.get_by_role("button", name=name),
+                page.get_by_role("link", name=name),
+                page.get_by_text(name),
+            ]
+            for candidate in candidates:
+                try:
+                    await candidate.first.wait_for(state="visible", timeout=timeout_ms)
+                    return True
+                except (PlaywrightError, PlaywrightTimeoutError):
+                    continue
+        return False
+
     @retry_async(attempts=3, initial_delay=2.0)
     async def _create_post(self, page: Page, markdown: str) -> None:
-        logger.info("Opening new post editor")
-        publish_url = f"{self.settings.substack_publication_url}/publish/post"
-        await page.goto(publish_url, wait_until="domcontentloaded")
-        await page.wait_for_load_state("networkidle")
+        logger.info("Opening new article editor")
+        await self._open_article_editor(page)
 
         title = extract_title(markdown)
         body = self._markdown_without_title(markdown)
 
         await self._fill_title(page, title)
         await self._paste_body(page, body)
+
+    async def _open_article_editor(self, page: Page) -> None:
+        await page.goto("https://substack.com/home", wait_until="domcontentloaded")
+        await self._click_by_text(page, ["Create"])
+        await self._click_by_text(page, ["Article"])
+        await self._try_click_by_text(page, ["Continue"], required=False, timeout_ms=8_000)
+        await self._wait_for_editor_ready(page)
+
+    async def _wait_for_editor_ready(self, page: Page) -> None:
+        candidates = [
+            'textarea[placeholder*="Title"]',
+            'input[placeholder*="Title"]',
+            '[contenteditable="true"][data-placeholder*="Title"]',
+            '[contenteditable="true"][aria-label*="Title"]',
+            ".ProseMirror",
+            '[contenteditable="true"]',
+        ]
+        try:
+            await page.wait_for_function(
+                """
+                selectors => selectors.some(selector => {
+                    const element = document.querySelector(selector);
+                    if (!element) return false;
+                    const style = window.getComputedStyle(element);
+                    const box = element.getBoundingClientRect();
+                    return style.visibility !== 'hidden'
+                        && style.display !== 'none'
+                        && box.width > 0
+                        && box.height > 0;
+                })
+                """,
+                candidates,
+                timeout=self.settings.playwright_timeout_ms,
+            )
+        except PlaywrightTimeoutError as exc:
+            raise RuntimeError("Substack editor did not become visible") from exc
 
     async def _fill_title(self, page: Page, title: str) -> None:
         candidates = [
@@ -190,10 +248,15 @@ class SubstackPublisher:
     @retry_async(attempts=2, initial_delay=2.0)
     async def _publish(self, page: Page) -> None:
         logger.info("Publishing post")
-        await self._click_by_text(page, ["Publish", "Continue"])
+        await self._click_by_text(page, ["Continue", "Publish"])
         await page.wait_for_timeout(1500)
-        await self._try_click_by_text(page, ["Publish now", "Publish", "Send"], required=True)
-        await page.wait_for_load_state("networkidle")
+        await self._try_click_by_text(
+            page,
+            ["Send to everyone now", "Publish now", "Publish", "Send"],
+            required=True,
+            timeout_ms=self.settings.playwright_timeout_ms,
+        )
+        await page.wait_for_load_state("domcontentloaded")
 
     async def _fill_first_available(
         self, page: Page, selectors: list[str], value: str
@@ -202,15 +265,20 @@ class SubstackPublisher:
             raise RuntimeError(f"None of these fields were found: {selectors}")
 
     async def _try_fill_first_available(
-        self, page: Page, selectors: list[str], value: str
+        self,
+        page: Page,
+        selectors: list[str],
+        value: str,
+        timeout_ms: int = 3_000,
     ) -> bool:
         for selector in selectors:
             loc = page.locator(selector)
             try:
-                if await loc.count():
-                    await loc.first.fill(value)
-                    return True
-            except PlaywrightError:
+                first = loc.first
+                await first.wait_for(state="visible", timeout=timeout_ms)
+                await first.fill(value)
+                return True
+            except (PlaywrightError, PlaywrightTimeoutError):
                 continue
         return False
 
@@ -220,24 +288,35 @@ class SubstackPublisher:
             raise RuntimeError(f"Could not click any button/link with labels: {labels}")
 
     async def _try_click_by_text(
-        self, page: Page, labels: list[str], required: bool
+        self,
+        page: Page,
+        labels: list[str],
+        required: bool,
+        timeout_ms: int | None = None,
     ) -> bool:
+        timeout = timeout_ms or (self.settings.playwright_timeout_ms if required else 3_000)
         for label in labels:
+            name = re.compile(rf"^\s*{re.escape(label)}\s*$", re.IGNORECASE)
             candidates = [
-                page.get_by_role("button", name=label),
-                page.get_by_role("link", name=label),
-                page.get_by_text(label, exact=True),
+                page.get_by_role("button", name=name),
+                page.get_by_role("link", name=name),
+                page.get_by_text(name),
             ]
             for candidate in candidates:
-                try:
-                    if await candidate.count():
-                        await candidate.first.click()
-                        return True
-                except (PlaywrightError, PlaywrightTimeoutError):
-                    continue
+                if await self._try_click_locator(candidate, timeout):
+                    return True
         if required:
             logger.error("Could not find clickable text among: %s", labels)
         return False
+
+    async def _try_click_locator(self, locator: Locator, timeout_ms: int) -> bool:
+        try:
+            first = locator.first
+            await first.wait_for(state="visible", timeout=timeout_ms)
+            await first.click(timeout=timeout_ms)
+            return True
+        except (PlaywrightError, PlaywrightTimeoutError):
+            return False
 
     async def _capture_failure(self, page: Page) -> None:
         stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
@@ -257,4 +336,3 @@ class SubstackPublisher:
         if lines and lines[0].startswith("# "):
             return "\n".join(lines[1:]).strip()
         return markdown.strip()
-

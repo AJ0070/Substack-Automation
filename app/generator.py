@@ -77,7 +77,9 @@ class BlogGenerator:
             stripped = line.strip()
             if re.match(r"^#{2,3}\s+\S", stripped):
                 headings.append(re.sub(r"^#{2,3}\s+", "", stripped).strip())
-            elif re.match(r"^\d+\.\s+\S", stripped):
+            elif re.match(r"^\d+\.\s+\S", stripped) and BlogGenerator._looks_like_heading(
+                stripped
+            ):
                 headings.append(re.sub(r"^\d+\.\s+", "", stripped).strip())
 
         cleaned: list[str] = []
@@ -87,6 +89,29 @@ class BlogGenerator:
             if heading not in cleaned:
                 cleaned.append(heading)
         return cleaned[:7]
+
+    @staticmethod
+    def _looks_like_heading(line: str) -> bool:
+        heading = re.sub(r"^\d+\.\s+", "", line).strip()
+        if "`" in heading:
+            return False
+        if len(heading) > 90:
+            return False
+        if heading.endswith((".", ":", ";")):
+            return False
+        if heading.lower().startswith(
+            (
+                "create ",
+                "run ",
+                "type ",
+                "example",
+                "analogy",
+                "notes",
+                "keywords",
+            )
+        ):
+            return False
+        return True
 
     @staticmethod
     def _merge_article(outline: str, sections: list[str]) -> str:
@@ -102,4 +127,3 @@ class BlogGenerator:
 
         body = "\n\n".join(section.strip() for section in sections if section.strip())
         return f"# {title}\n\n{body}".strip()
-

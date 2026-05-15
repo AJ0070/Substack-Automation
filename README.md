@@ -114,9 +114,10 @@ Generated articles and logs are uploaded as workflow artifacts.
 The publisher uses:
 
 - headless Chromium by default
+- Substack's visible creation flow: home page, `Create`, `Article`, optional `Continue`
 - accessible roles and text selectors first
 - CSS selector fallbacks for editor fields
-- explicit load-state waits and short stabilization waits
+- bounded editor-visible waits instead of fragile `networkidle` waits
 - retries around login, editor creation, save, and publish
 - failure screenshots and HTML captures in `logs/`
 
@@ -151,4 +152,3 @@ Use the workflow as provided; it runs `playwright install --with-deps chromium`.
 - Use GitHub secrets for credentials.
 - Prefer one scheduled run at a time to avoid duplicate posts.
 - Keep generated markdown in `articles/` for review and auditability.
-
