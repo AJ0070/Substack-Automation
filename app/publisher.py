@@ -75,15 +75,36 @@ class SubstackPublisher:
 
         logger.info("Opening Substack login")
         await page.goto("https://substack.com/sign-in", wait_until="domcontentloaded")
+        await page.wait_for_timeout(2_000)
+
+        await self._try_click_by_text(
+            page,
+            [
+                "Sign in with email",
+                "Continue with email",
+                "Use email",
+                "Email",
+                "Log in with email",
+            ],
+            required=False,
+            timeout_ms=5_000,
+        )
 
         await self._fill_first_available(
             page,
             [
                 'input[type="email"]',
                 'input[name="email"]',
+                'input[name="email_address"]',
+                'input[name="emailAddress"]',
+                'input[name="emailOrUsername"]',
                 'input[autocomplete="email"]',
+                'input[placeholder*="email" i]',
+                'input[aria-label*="email" i]',
+                'input[type="text"]',
             ],
             self.settings.substack_email,
+            timeout_ms=10_000,
         )
         await self._click_by_text(page, ["Continue", "Sign in", "Log in"])
 
@@ -259,8 +280,20 @@ class SubstackPublisher:
         await page.wait_for_load_state("domcontentloaded")
 
     async def _fill_first_available(
-        self, page: Page, selectors: list[str], value: str
+        self,
+        page: Page,
+        selectors: list[str],
+        value: str,
+        timeout_ms: int = 3_000,
     ) -> None:
+        if await self._try_fill_first_available(page, selectors, value, timeout_ms):
+            return
+        if await self._try_fill_textbox_by_name(page, value, timeout_ms):
+            return
+        if await self._try_fill_any_visible_input(page, value, timeout_ms):
+            return
+
+        await self._log_page_state(page, "Could not find fillable field")
         if not await self._try_fill_first_available(page, selectors, value):
             raise RuntimeError(f"None of these fields were found: {selectors}")
 
@@ -281,6 +314,51 @@ class SubstackPublisher:
             except (PlaywrightError, PlaywrightTimeoutError):
                 continue
         return False
+
+    async def _try_fill_textbox_by_name(
+        self, page: Page, value: str, timeout_ms: int
+    ) -> bool:
+        for name in [
+            re.compile(r"email", re.IGNORECASE),
+            re.compile(r"email address", re.IGNORECASE),
+        ]:
+            try:
+                textbox = page.get_by_role("textbox", name=name).first
+                await textbox.wait_for(state="visible", timeout=timeout_ms)
+                await textbox.fill(value)
+                return True
+            except (PlaywrightError, PlaywrightTimeoutError):
+                continue
+        return False
+
+    async def _try_fill_any_visible_input(
+        self, page: Page, value: str, timeout_ms: int
+    ) -> bool:
+        inputs = page.locator(
+            'input:not([type="hidden"]):not([type="submit"]):not([type="button"])'
+        )
+        try:
+            count = await inputs.count()
+        except PlaywrightError:
+            return False
+
+        for index in range(count):
+            candidate = inputs.nth(index)
+            try:
+                await candidate.wait_for(state="visible", timeout=timeout_ms)
+                await candidate.fill(value)
+                return True
+            except (PlaywrightError, PlaywrightTimeoutError):
+                continue
+        return False
+
+    async def _log_page_state(self, page: Page, message: str) -> None:
+        try:
+            body_text = await page.locator("body").inner_text(timeout=2_000)
+        except PlaywrightError:
+            body_text = ""
+        preview = " ".join(body_text.split())[:500]
+        logger.error("%s. url=%s title=%r body_preview=%r", message, page.url, await page.title(), preview)
 
     async def _click_by_text(self, page: Page, labels: list[str]) -> None:
         clicked = await self._try_click_by_text(page, labels, required=True)
