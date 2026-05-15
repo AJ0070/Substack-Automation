@@ -45,8 +45,16 @@ jobs:
           GEMINI_RETRY_MAX_DELAY_SECONDS: "90"
           GENERATION_MODE: "compact"
         run: |
-          if [ -n "${{ github.event.inputs.markdown_file }}" ]; then
-            python main.py --markdown-file "${{ github.event.inputs.markdown_file }}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            MARKDOWN_FILE="${{ github.event.inputs.markdown_file }}"
+            if [ -z "$MARKDOWN_FILE" ]; then
+              MARKDOWN_FILE="articles/samples/getting-started-with-git.md"
+            fi
+            if [ ! -f "$MARKDOWN_FILE" ]; then
+              echo "Markdown file not found: $MARKDOWN_FILE"
+              exit 1
+            fi
+            python main.py --markdown-file "$MARKDOWN_FILE"
           else
             python main.py
           fi
