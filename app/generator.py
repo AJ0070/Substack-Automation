@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+import random
 import re
+import time
 from dataclasses import dataclass
 
 from google import genai
@@ -11,7 +13,7 @@ from google.genai import types
 
 from app import prompts
 from app.config import Settings
-from app.utils import ensure_text, retry_sync
+from app.utils import ensure_text
 
 logger = logging.getLogger(__name__)
 
@@ -57,8 +59,37 @@ class BlogGenerator:
             markdown=final_markdown,
         )
 
-    @retry_sync(attempts=3, initial_delay=2.0)
     def _generate_text(self, prompt: str) -> str:
+        delay = self.settings.gemini_retry_initial_delay_seconds
+        last_error: Exception | None = None
+
+        for attempt in range(1, self.settings.max_retries + 1):
+            try:
+                return self._call_gemini(prompt)
+            except Exception as exc:
+                last_error = exc
+                if attempt >= self.settings.max_retries:
+                    break
+
+                sleep_for = min(delay, self.settings.gemini_retry_max_delay_seconds)
+                sleep_for += random.uniform(0, min(3.0, sleep_for * 0.25))
+                logger.warning(
+                    "Gemini generation failed on attempt %s/%s: %s. Retrying in %.1fs.",
+                    attempt,
+                    self.settings.max_retries,
+                    exc,
+                    sleep_for,
+                )
+                time.sleep(sleep_for)
+                delay *= 2
+
+        assert last_error is not None
+        raise RuntimeError(
+            "Gemini generation failed after "
+            f"{self.settings.max_retries} attempts. The model may be temporarily overloaded."
+        ) from last_error
+
+    def _call_gemini(self, prompt: str) -> str:
         response = self.client.models.generate_content(
             model=self.settings.gemini_model,
             contents=prompt,

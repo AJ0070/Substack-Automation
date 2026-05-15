@@ -26,7 +26,9 @@ class Settings:
     article_dir: Path
     log_dir: Path
     gemini_model: str = "gemini-2.5-flash"
-    max_retries: int = 3
+    max_retries: int = 6
+    gemini_retry_initial_delay_seconds: float = 10.0
+    gemini_retry_max_delay_seconds: float = 90.0
     playwright_timeout_ms: int = 45_000
 
     @property
@@ -74,6 +76,12 @@ def load_settings(env_file: str | Path = ".env") -> Settings:
         headless=_bool_env("HEADLESS", True),
         article_dir=article_dir,
         log_dir=log_dir,
-        max_retries=int(os.getenv("MAX_RETRIES", "3")),
+        max_retries=int(os.getenv("MAX_RETRIES", "6")),
+        gemini_retry_initial_delay_seconds=float(
+            os.getenv("GEMINI_RETRY_INITIAL_DELAY_SECONDS", "10")
+        ),
+        gemini_retry_max_delay_seconds=float(
+            os.getenv("GEMINI_RETRY_MAX_DELAY_SECONDS", "90")
+        ),
         playwright_timeout_ms=int(os.getenv("PLAYWRIGHT_TIMEOUT_MS", "45000")),
     )

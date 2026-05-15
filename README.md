@@ -42,7 +42,9 @@ Recommended:
 - `HEADLESS`: `true` for CI, `false` for local debugging.
 - `ARTICLE_DIR`: defaults to `articles`.
 - `LOG_DIR`: defaults to `logs`.
-- `MAX_RETRIES`: defaults to `3`.
+- `MAX_RETRIES`: Gemini generation retry attempts, defaults to `6`.
+- `GEMINI_RETRY_INITIAL_DELAY_SECONDS`: first Gemini retry delay, defaults to `10`.
+- `GEMINI_RETRY_MAX_DELAY_SECONDS`: maximum Gemini retry delay, defaults to `90`.
 - `PLAYWRIGHT_TIMEOUT_MS`: defaults to `45000`.
 
 ## Gemini API Setup
@@ -140,6 +142,10 @@ Substack changed the editor UI or the publication URL is wrong. Confirm `SUBSTAC
 `Gemini returned an empty response`
 
 Retry later or lower the generation complexity in `app/prompts.py`.
+
+`503 UNAVAILABLE` from Gemini
+
+The Gemini model is temporarily overloaded. The workflow now retries with longer exponential backoff. Rerun the job if all retry attempts are exhausted.
 
 `playwright install` errors in CI
 
